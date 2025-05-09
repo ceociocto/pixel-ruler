@@ -37,13 +37,13 @@
       "suggested_key": {
         "default": "Alt+Shift+L"
       },
-      "description": "开始测量元素之间的距离"
+      "description": "Start measuring the distance between elements"
     },
     "stop-measuring": {
       "suggested_key": {
         "default": "Alt+Shift+S"
       },
-      "description": "停止测量元素之间的距离"
+      "description": "Stop measuring the distance between elements"
     }
   }
 }

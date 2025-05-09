@@ -1,23 +1,23 @@
-// 监听键盘快捷键命令
+// Listen for keyboard shortcut commands
 chrome.commands.onCommand.addListener((command) => {
     if (command === "start-measuring" || command === "stop-measuring") {
-        // 获取当前激活的标签页
+        // Get the currently active tab
         chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
             if (tabs.length > 0) {
-                // 执行内容脚本发送事件
+                // Execute content script to send event
                 chrome.scripting.executeScript({
                     target: { tabId: tabs[0].id },
                     func: (cmd) => {
-                        // 触发内容脚本中的事件
+                        // Trigger custom event in content script
                         const event = new CustomEvent(cmd === 'start-measuring' ? 'startMeasuring' : 'stopMeasuring');
                         document.dispatchEvent(event);
 
-                        // 向所有iframe发送消息
+                        // Send message to all iframes
                         try {
-                            // 使用requestAnimationFrame延迟执行iframe消息发送，减少切换负载
+                            // Use requestAnimationFrame to delay iframe message sending, reduce switching load
                             requestAnimationFrame(() => {
                                 const iframes = document.querySelectorAll('iframe');
-                                if (iframes.length === 0) return; // 如果没有iframe，提前退出
+                                if (iframes.length === 0) return; // If no iframe, exit early
 
                                 iframes.forEach(iframe => {
                                     if (iframe.contentWindow) {

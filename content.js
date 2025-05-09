@@ -1,16 +1,18 @@
 // Global variables
 let measuring = false;
-let startElement = null;
-let endElement = null;
+let firstElement = null;
+let secondElement = null;
 let marker1 = null;
 let marker2 = null;
 let line = null;
 let label = null;
-let permanentRulers = []; // 用于存储持久的永久标尺
-let parentOrigin = window !== window.top ? window.parent.origin : null; // 当前脚本如果在iframe内则记录父iframe
-let lastMouseOverTime = 0; // 用于iframe的鼠标防抖
-const THROTTLE_DELAY = 30; // 鼠标移动防抖延迟，约33fps
-let hoverElementCache = null; // 用于缓存上一个悬停的元素，避免重复标记
+let permanentRulers = []; // Store all permanent rulers
+let parentOrigin = window !== window.top ? window.parent.origin : null; // If running in iframe, record parent
+let lastMouseOverTime = 0; // Mouse throttle for iframe
+const THROTTLE_DELAY = 30; // Mouse move throttle delay, about 33fps
+let hoverElementCache = null; // Cache last hovered element to avoid duplicate highlight
+let ruler = null; // Temporary ruler global variable
+let rulerButtonContainer = null;
 
 // 监听自定义事件
 document.addEventListener('startMeasuring', function() {
@@ -45,32 +47,79 @@ chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
     }
 });
 
+function showRulerButtons() {
+    if (rulerButtonContainer) return;
+    rulerButtonContainer = document.createElement('div');
+    rulerButtonContainer.style.position = 'fixed';
+    rulerButtonContainer.style.right = '32px';
+    rulerButtonContainer.style.bottom = '32px';
+    rulerButtonContainer.style.zIndex = '100001';
+    rulerButtonContainer.style.display = 'flex';
+    rulerButtonContainer.style.flexDirection = 'column';
+    rulerButtonContainer.style.gap = '12px';
+
+    // Undo button
+    const undoBtn = document.createElement('button');
+    undoBtn.textContent = 'Undo Last';
+    undoBtn.style.padding = '8px 16px';
+    undoBtn.style.background = '#fff';
+    undoBtn.style.border = '1px solid #2196F3';
+    undoBtn.style.color = '#2196F3';
+    undoBtn.style.borderRadius = '6px';
+    undoBtn.style.fontSize = '14px';
+    undoBtn.style.cursor = 'pointer';
+    undoBtn.style.boxShadow = '0 2px 8px rgba(0,0,0,0.08)';
+    undoBtn.onclick = function() {
+        if (permanentRulers.length > 0) {
+            const last = permanentRulers.pop();
+            if (last.marker1) last.marker1.remove();
+            if (last.marker2) last.marker2.remove();
+            if (last.line) last.line.remove();
+            if (last.label) last.label.remove();
+        }
+    };
+
+    // Clear all button
+    const clearBtn = document.createElement('button');
+    clearBtn.textContent = 'Clear All';
+    clearBtn.style.padding = '8px 16px';
+    clearBtn.style.background = '#fff';
+    clearBtn.style.border = '1px solid #F44336';
+    clearBtn.style.color = '#F44336';
+    clearBtn.style.borderRadius = '6px';
+    clearBtn.style.fontSize = '14px';
+    clearBtn.style.cursor = 'pointer';
+    clearBtn.style.boxShadow = '0 2px 8px rgba(0,0,0,0.08)';
+    clearBtn.onclick = function() {
+        removeAllMarkers();
+        permanentRulers.length = 0;
+    };
+
+    rulerButtonContainer.appendChild(undoBtn);
+    rulerButtonContainer.appendChild(clearBtn);
+    document.body.appendChild(rulerButtonContainer);
+}
+
+function hideRulerButtons() {
+    if (rulerButtonContainer) {
+        rulerButtonContainer.remove();
+        rulerButtonContainer = null;
+    }
+}
+
 function startMeasuring() {
-    if (measuring) return; // 避免重复启动
-
+    if (measuring) return; // Avoid duplicate start
     measuring = true;
-
-    // 更改鼠标光标
     document.body.style.cursor = 'crosshair';
-
-    // 移除所有标记元素
     removeAllMarkers();
-
-    // 只添加一次事件监听，避免重复添加
     document.removeEventListener('click', handleClick);
     document.removeEventListener('mousemove', handleMouseMove);
     document.removeEventListener('click', preventDefault);
-
-    // 添加点击事件
     document.addEventListener('click', handleClick, { passive: false });
-
-    // 添加鼠标移动事件以进行可视化
     document.addEventListener('mousemove', handleMouseMove, { passive: true });
-
-    // 阻止默认点击行为
     document.addEventListener('click', preventDefault, { passive: false });
-
-    console.log('测量模式已启动');
+    showRulerButtons();
+    console.log('Measuring mode started');
 }
 
 function stopMeasuring() {
@@ -81,32 +130,41 @@ function stopMeasuring() {
     document.removeEventListener('click', handleClick);
     document.removeEventListener('mousemove', handleMouseMove);
     document.removeEventListener('click', preventDefault);
-    console.log('测量模式已停止');
+    hideRulerButtons();
+    console.log('Measuring mode stopped');
 }
 
 function handleClick(e) {
     if (!measuring) return;
-    if (!startElement) {
-        startElement = document.elementFromPoint(e.clientX, e.clientY);
-        marker1 = createMarker(startElement, 'first');
+    if (!firstElement) {
+        // Hide all markers to avoid blocking
+        document.querySelectorAll('.chrome-ruler-marker').forEach(el => el.style.display = 'none');
+        firstElement = document.elementFromPoint(e.clientX, e.clientY);
+        document.querySelectorAll('.chrome-ruler-marker').forEach(el => el.style.display = '');
+        marker1 = createMarker(firstElement, 'first');
     } else {
-        endElement = document.elementFromPoint(e.clientX, e.clientY);
-        marker2 = createMarker(endElement, 'second');
+        // Hide all markers to avoid blocking
+        document.querySelectorAll('.chrome-ruler-marker').forEach(el => el.style.display = 'none');
+        secondElement = document.elementFromPoint(e.clientX, e.clientY);
+        document.querySelectorAll('.chrome-ruler-marker').forEach(el => el.style.display = '');
+        marker2 = createMarker(secondElement, 'second');
         line = createLine(marker1, marker2);
         label = createLabel(marker1, marker2, line);
         permanentRulers.push({ marker1, marker2, line, label });
-        measuring = false;
-        document.body.style.cursor = '';
-        startElement = null;
-        endElement = null;
+        // Remove temporary ruler
+        if (ruler) {
+            ruler.remove();
+            ruler = null;
+        }
+        // Reset state for next measurement
+        firstElement = null;
+        secondElement = null;
         marker1 = null;
         marker2 = null;
         line = null;
         label = null;
-        document.removeEventListener('click', handleClick);
-        document.removeEventListener('mousemove', handleMouseMove);
-        document.removeEventListener('click', preventDefault);
-        console.log('测量完成');
+        document.body.style.cursor = 'crosshair';
+        console.log('Measurement finished, waiting for next measurement');
     }
 }
 
@@ -137,14 +195,25 @@ function preventDefault(e) {
 }
 
 function removeAllMarkers() {
-    // 移除所有标记和线条
-    document.querySelectorAll('.chrome-ruler-marker, .chrome-ruler-line, .chrome-ruler-label').forEach(el => el.remove());
+    // Remove all markers and rulers
+    const markers = document.querySelectorAll('.chrome-ruler-marker, .chrome-ruler-line, .chrome-ruler-permanent, .chrome-ruler-label');
+    markers.forEach(marker => marker.remove());
+    // Reset variables
+    firstElement = null;
+    secondElement = null;
+    marker1 = null;
+    marker2 = null;
+    ruler = null;
+    hoverMarker = null;
 }
 
 function createMarker(element, type) {
-    // 创建标记元素
+    // Create marker element
     const rect = element.getBoundingClientRect();
     const marker = document.createElement('div');
+    marker.style.position = 'absolute';
+    marker.style.left = (window.scrollX + rect.left) + 'px';
+    marker.style.top = (window.scrollY + rect.top) + 'px';
     marker.style.width = rect.width + 'px';
     marker.style.height = rect.height + 'px';
     marker.style.border = '2px solid ' + (type === 'first' ? '#FFA801' : '#2196F3');
@@ -162,17 +231,81 @@ function createMarker(element, type) {
     return marker;
 }
 
+function calculateDistance(el1, el2) {
+    const rect1 = el1.getBoundingClientRect();
+    const rect2 = el2.getBoundingClientRect();
+    // 计算最近水平距离
+    const leftToRight = Math.abs(rect1.right - rect2.left);
+    const rightToLeft = Math.abs(rect2.right - rect1.left);
+    // 计算最近垂直距离
+    const topToBottom = Math.abs(rect1.bottom - rect2.top);
+    const bottomToTop = Math.abs(rect2.bottom - rect1.top);
+    const horizontal = Math.min(leftToRight, rightToLeft);
+    const vertical = Math.min(topToBottom, bottomToTop);
+    return { horizontal, vertical, distance: Math.sqrt(horizontal * horizontal + vertical * vertical) };
+}
+
+function getNearestHorizontalPoints(rect1, rect2) {
+    const leftToRight = Math.abs(rect1.right - rect2.left);
+    const rightToLeft = Math.abs(rect2.right - rect1.left);
+    if (leftToRight < rightToLeft) {
+        return {
+            start: { x: rect1.right, y: rect1.top + rect1.height / 2 },
+            end: { x: rect2.left, y: rect2.top + rect2.height / 2 }
+        };
+    } else {
+        return {
+            start: { x: rect2.right, y: rect2.top + rect2.height / 2 },
+            end: { x: rect1.left, y: rect1.top + rect1.height / 2 }
+        };
+    }
+}
+
+function getNearestVerticalPoints(rect1, rect2) {
+    const topToBottom = Math.abs(rect1.bottom - rect2.top);
+    const bottomToTop = Math.abs(rect2.bottom - rect1.top);
+    if (topToBottom < bottomToTop) {
+        return {
+            start: { x: rect1.left + rect1.width / 2, y: rect1.bottom },
+            end: { x: rect2.left + rect2.width / 2, y: rect2.top }
+        };
+    } else {
+        return {
+            start: { x: rect2.left + rect2.width / 2, y: rect2.bottom },
+            end: { x: rect1.left + rect1.width / 2, y: rect1.top }
+        };
+    }
+}
+
 function createLine(marker1, marker2) {
-    // 创建连接两点的线
     const rect1 = marker1.getBoundingClientRect();
     const rect2 = marker2.getBoundingClientRect();
+    const dx = Math.abs(rect1.right - rect2.left);
+    const dx2 = Math.abs(rect2.right - rect1.left);
+    const dy = Math.abs(rect1.bottom - rect2.top);
+    const dy2 = Math.abs(rect2.bottom - rect1.top);
+    const minH = Math.min(dx, dx2);
+    const minV = Math.min(dy, dy2);
     const line = document.createElement('div');
     line.className = 'chrome-ruler-line';
-    line.style.position = 'fixed';
-    line.style.left = Math.min(rect1.left, rect2.left) + 'px';
-    line.style.top = Math.min(rect1.top, rect2.top) + 'px';
-    line.style.width = Math.abs(rect1.left - rect2.left) + 'px';
-    line.style.height = Math.abs(rect1.top - rect2.top) + 'px';
+    line.style.position = 'absolute';
+    if (minH <= minV) {
+        // 水平线，连接最近的水平边
+        const { start, end } = getNearestHorizontalPoints(rect1, rect2);
+        line.style.left = (window.scrollX + Math.min(start.x, end.x)) + 'px';
+        line.style.top = (window.scrollY + start.y) + 'px';
+        line.style.width = Math.abs(start.x - end.x) + 'px';
+        line.style.height = '2px';
+        line.style.transform = 'none';
+    } else {
+        // 垂直线，连接最近的垂直边
+        const { start, end } = getNearestVerticalPoints(rect1, rect2);
+        line.style.left = (window.scrollX + start.x) + 'px';
+        line.style.top = (window.scrollY + Math.min(start.y, end.y)) + 'px';
+        line.style.width = '2px';
+        line.style.height = Math.abs(start.y - end.y) + 'px';
+        line.style.transform = 'none';
+    }
     line.style.border = '1px dashed #0f0';
     line.style.zIndex = 99999;
     document.body.appendChild(line);
@@ -180,217 +313,109 @@ function createLine(marker1, marker2) {
 }
 
 function createLabel(marker1, marker2, line) {
-    // 创建距离标签
     const rect1 = marker1.getBoundingClientRect();
     const rect2 = marker2.getBoundingClientRect();
+    const dx = Math.abs(rect1.right - rect2.left);
+    const dx2 = Math.abs(rect2.right - rect1.left);
+    const dy = Math.abs(rect1.bottom - rect2.top);
+    const dy2 = Math.abs(rect2.bottom - rect1.top);
+    const minH = Math.min(dx, dx2);
+    const minV = Math.min(dy, dy2);
     const label = document.createElement('div');
     label.className = 'chrome-ruler-label';
-    label.style.position = 'fixed';
-    label.style.left = ((rect1.left + rect2.left) / 2) + 'px';
-    label.style.top = ((rect1.top + rect2.top) / 2) + 'px';
-    label.style.background = '#fff';
-    label.style.color = '#333';
-    label.style.padding = '2px 6px';
-    label.style.borderRadius = '3px';
-    label.style.fontSize = '12px';
-    label.style.zIndex = 100000;
-    label.textContent = getDistanceText(rect1, rect2);
+    label.style.position = 'absolute';
+    label.style.background = '#1976D2';
+    label.style.color = '#fff';
+    label.style.padding = '6px 16px';
+    label.style.borderRadius = '12px';
+    label.style.fontSize = '18px';
+    label.style.fontWeight = 'bold';
+    label.style.zIndex = '100000';
+    label.style.border = '2px solid #fff';
+    label.style.boxShadow = '0 2px 12px rgba(25, 118, 210, 0.25)';
+    label.style.display = 'flex';
+    label.style.alignItems = 'center';
+    label.style.gap = '12px';
+    // Highlight numbers, gray px
+    label.innerHTML = `H: <span style="color:#FFEB3B;">${minH}</span><span style="color:#bbb;font-size:14px;font-weight:normal;">px</span>, V: <span style="color:#FFEB3B;">${minV}</span><span style="color:#bbb;font-size:14px;font-weight:normal;">px</span>`;
+    if (minH <= minV) {
+        // Horizontal, label centered on the line
+        const { start, end } = getNearestHorizontalPoints(rect1, rect2);
+        label.style.left = (window.scrollX + ((start.x + end.x) / 2 - 40)) + 'px';
+        label.style.top = (window.scrollY + (start.y - 36)) + 'px';
+    } else {
+        // Vertical, label centered on the line
+        const { start, end } = getNearestVerticalPoints(rect1, rect2);
+        label.style.left = (window.scrollX + start.x + 16) + 'px';
+        label.style.top = (window.scrollY + ((start.y + end.y) / 2 - 18)) + 'px';
+    }
     document.body.appendChild(label);
     return label;
 }
 
-function getDistanceText(rect1, rect2) {
-    const dx = Math.abs(rect1.left - rect2.left);
-    const dy = Math.abs(rect1.top - rect2.top);
-    const distance = Math.round(Math.sqrt(dx * dx + dy * dy));
-    return `距离: ${distance}px (水平: ${dx}px, 垂直: ${dy}px)`;
-}
-
-function calculateDistance(el1, el2) {
-    const rect1 = el1.getBoundingClientRect();
-    const rect2 = el2.getBoundingClientRect();
-    // 计算实际像素距离，适配高DPI设备
-    const dpr = window.devicePixelRatio || 1;
-
-    // 计算水平距离，只考虑元素之间的空隙
-    let horizontal = 0;
-    if (rect2.left > rect1.right) {
-        // 元素2在元素1右侧
-        horizontal = rect2.left - rect1.right;
-    } else if (rect1.left > rect2.right) {
-        // 元素1在元素2右侧
-        horizontal = rect1.left - rect2.right;
-    } else {
-        // 有重叠，算为0
-        horizontal = 0;
-    }
-
-    // 计算垂直距离，两元素的边之间的空隙
-    let vertical = 0;
-    if (rect2.top > rect1.bottom) {
-        // 元素2在元素1下方
-        vertical = rect2.top - rect1.bottom;
-    } else if (rect1.top > rect2.bottom) {
-        // 元素1在元素2下方
-        vertical = rect1.top - rect2.bottom;
-    } else {
-        // 有重叠，算为0
-        vertical = 0;
-    }
-
-    // 如果两元素在两个方向都重叠，则使用中心点计算对角线距离
-    if (horizontal === 0 && vertical === 0) {
-        const center1 = {
-            x: rect1.left + (rect1.width / 2),
-            y: rect1.top + (rect1.height / 2)
-        };
-        const center2 = {
-            x: rect2.left + (rect2.width / 2),
-            y: rect2.top + (rect2.height / 2)
-        };
-        horizontal = Math.abs(center2.x - center1.x) - (rect1.width / 2) - (rect2.width / 2);
-        vertical = Math.abs(center2.y - center1.y) - (rect1.height / 2) - (rect2.height / 2);
-    }
-    // 保证距离不为负
-    horizontal = Math.max(0, horizontal);
-    vertical = Math.max(0, vertical);
-
-    // 得到最终距离值并返回测量结果
-    const distance = Math.sqrt(horizontal * horizontal + vertical * vertical);
-    return {
-        horizontal: parseFloat(horizontal.toFixed(1)),
-        vertical: parseFloat(vertical.toFixed(1)),
-        distance: parseFloat(distance.toFixed(1))
-    };
-}
-
 function updateTemporaryRuler(measurements, event) {
-    if (ruler) {
+    if (!ruler) {
         ruler = document.createElement('div');
         ruler.className = 'chrome-ruler-line';
         ruler.style.position = 'absolute';
-        ruler.style.backgroundColor = 'rgba(255, 193, 7, 0.5)';
+        ruler.style.backgroundColor = 'rgba(25, 118, 210, 0.2)';
         ruler.style.zIndex = '99998';
         ruler.style.transformOrigin = 'top left';
         ruler.style.pointerEvents = 'none';
-
         const label = document.createElement('div');
         label.className = 'chrome-ruler-label';
         label.style.position = 'absolute';
-        label.style.background = '#fff7c7';
-        label.style.color = '#000';
-        label.style.border = '1px solid #FFC107';
-        label.style.padding = '2px 5px';
-        label.style.borderRadius = '2px';
-        label.style.fontSize = '12px';
+        label.style.background = '#1976D2';
+        label.style.color = '#fff';
+        label.style.padding = '6px 16px';
+        label.style.borderRadius = '12px';
+        label.style.fontSize = '18px';
+        label.style.fontWeight = 'bold';
         label.style.zIndex = 100000;
-        label.style.pointerEvents = 'none';
-        label.style.transform = 'rotate(0deg)'; // 始终保持标签水平
-        label.style.whiteSpace = 'nowrap'; // 防止文字折行
-
+        label.style.border = '2px solid #fff';
+        label.style.boxShadow = '0 2px 12px rgba(25, 118, 210, 0.25)';
+        label.style.display = 'flex';
+        label.style.alignItems = 'center';
+        label.style.gap = '12px';
         ruler.appendChild(label);
         document.body.appendChild(ruler);
     }
-
     const rect1 = firstElement.getBoundingClientRect();
-    // 获取当前鼠标指向的元素
     const currentElement = document.elementFromPoint(event.clientX, event.clientY);
     const rect2 = currentElement.getBoundingClientRect();
-    let startPoint = { x: 0, y: 0 };
-    let endPoint = { x: 0, y: 0 };
-    let isVertical = false;
-
-    // 水平方式
-    if ((measurements.horizontal > 0) && measurements.vertical === 0) {
-        if (rect2.left > rect1.right) {
-            // 元素2在右侧
-            startPoint.x = window.scrollX + rect1.right;
-            endPoint.x = window.scrollX + rect2.left;
-        } else {
-            // 元素1在右侧
-            startPoint.x = window.scrollX + rect2.right;
-            endPoint.x = window.scrollX + rect1.left;
-        }
-        startPoint.y = window.scrollY + rect1.top + rect1.height / 2;
-        endPoint.y = window.scrollY + rect2.top + rect2.height / 2;
-        isVertical = false;
-    } else if ((measurements.vertical > 0) && measurements.horizontal === 0) {
-        if (rect2.top > rect1.bottom) {
-            // 元素2在下方
-            startPoint.y = window.scrollY + rect1.bottom;
-            endPoint.y = window.scrollY + rect2.top;
-        } else {
-            // 元素1在下方
-            startPoint.y = window.scrollY + rect2.bottom;
-            endPoint.y = window.scrollY + rect1.top;
-        }
-        startPoint.x = window.scrollX + rect1.left + rect1.width / 2;
-        endPoint.x = window.scrollX + rect2.left + rect2.width / 2;
-        isVertical = true;
-    } else {
-        if (rect1.left > rect2.right) {
-            // 元素1在右侧
-            startPoint.x = window.scrollX + rect1.left;
-            endPoint.x = window.scrollX + rect2.right;
-        } else if (rect2.left > rect1.right) {
-            // 元素2在右侧
-            startPoint.x = window.scrollX + rect2.left;
-            endPoint.x = window.scrollX + rect1.right;
-        } else {
-            // 对齐中心
-            startPoint.x = window.scrollX + rect1.left + rect1.width / 2;
-            endPoint.x = window.scrollX + rect2.left + rect2.width / 2;
-        }
-        if (rect1.top > rect2.bottom) {
-            // 元素1在下方
-            startPoint.y = window.scrollY + rect1.top;
-            endPoint.y = window.scrollY + rect2.bottom;
-        } else if (rect2.top > rect1.bottom) {
-            // 元素2在下方
-            startPoint.y = window.scrollY + rect2.top;
-            endPoint.y = window.scrollY + rect1.bottom;
-        } else {
-            // 对齐中心
-            startPoint.y = window.scrollY + rect1.top + rect1.height / 2;
-            endPoint.y = window.scrollY + rect2.top + rect2.height / 2;
-        }
-    }
-
-    // 兼容主方向
-    isVertical = Math.abs(endPoint.y - startPoint.y) > Math.abs(endPoint.x - startPoint.x);
-
-    // 计算长度和夹角
-    const dx = endPoint.x - startPoint.x;
-    const dy = endPoint.y - startPoint.y;
-    const distance = Math.sqrt(dx * dx + dy * dy);
-    const angle = Math.atan2(dy, dx);
-
-    ruler.style.width = isVertical ? distance + 'px' : distance + 'px';
-    ruler.style.height = isVertical ? '2px' : '2px';
-    ruler.style.left = startPoint.x + 'px';
-    ruler.style.top = startPoint.y + 'px';
-
-    // 只有水平和垂直不需要旋转
-    if (isVertical) {
+    const dx = Math.abs(rect1.right - rect2.left);
+    const dx2 = Math.abs(rect2.right - rect1.left);
+    const dy = Math.abs(rect1.bottom - rect2.top);
+    const dy2 = Math.abs(rect2.bottom - rect1.top);
+    const minH = Math.min(dx, dx2);
+    const minV = Math.min(dy, dy2);
+    let isHorizontal = minH <= minV;
+    if (isHorizontal) {
+        const { start, end } = getNearestHorizontalPoints(rect1, rect2);
+        ruler.style.left = (window.scrollX + Math.min(start.x, end.x)) + 'px';
+        ruler.style.top = (window.scrollY + start.y) + 'px';
+        ruler.style.width = Math.abs(start.x - end.x) + 'px';
+        ruler.style.height = '2px';
         ruler.style.transform = 'none';
     } else {
-        ruler.style.transform = `rotate(${angle}rad)`;
+        const { start, end } = getNearestVerticalPoints(rect1, rect2);
+        ruler.style.left = (window.scrollX + start.x) + 'px';
+        ruler.style.top = (window.scrollY + Math.min(start.y, end.y)) + 'px';
+        ruler.style.width = '2px';
+        ruler.style.height = Math.abs(start.y - end.y) + 'px';
+        ruler.style.transform = 'none';
     }
-
     const label = ruler.querySelector('.chrome-ruler-label');
-    label.textContent = `${measurements.distance}px (H: ${measurements.horizontal}px, V: ${measurements.vertical}px)`;
-
-    // 标签位置
-    let labelLeft, labelTop;
-    if (isVertical) {
-        labelLeft = 0;
-        labelTop = distance / 2 - (label.offsetHeight / 2);
+    label.innerHTML = `H: <span style=\"color:#FFEB3B;\">${minH}</span><span style=\"color:#bbb;font-size:14px;font-weight:normal;\">px</span>, V: <span style=\"color:#FFEB3B;\">${minV}</span><span style=\"color:#bbb;font-size:14px;font-weight:normal;\">px</span>`;
+    if (isHorizontal) {
+        const { start, end } = getNearestHorizontalPoints(rect1, rect2);
+        label.style.left = (Math.abs(start.x - end.x) / 2 - 40) + 'px';
+        label.style.top = '-36px';
     } else {
-        labelLeft = distance / 2 - (label.offsetWidth / 2);
-        labelTop = -label.offsetHeight - 5;
+        const { start, end } = getNearestVerticalPoints(rect1, rect2);
+        label.style.left = '16px';
+        label.style.top = (Math.abs(start.y - end.y) / 2 - 18) + 'px';
     }
-    label.style.left = labelLeft + 'px';
-    label.style.top = labelTop + 'px';
 }
 
 function displayMeasurement(measurements) {
@@ -500,19 +525,6 @@ function drawRuler(measurements) {
     label.style.top = labelTop + 'px';
     permanentRuler.appendChild(label);
     document.body.appendChild(permanentRuler);
-}
-
-function removeAllMarkers() {
-    // Remove any existing markers and rulers
-    const markers = document.querySelectorAll('.chrome-ruler-marker, .chrome-ruler-line, .chrome-ruler-permanent, .chrome-ruler-label');
-    markers.forEach(marker => marker.remove());
-    // Reset variables
-    firstElement = null;
-    secondElement = null;
-    marker1 = null;
-    marker2 = null;
-    ruler = null;
-    hoverMarker = null;
 }
 
 function preventDefault(e) {

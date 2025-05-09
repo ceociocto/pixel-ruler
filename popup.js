@@ -16,23 +16,6 @@ document.addEventListener('DOMContentLoaded', function() {
                     // 直接在页面上执行startMeasuring功能
                     const event = new CustomEvent('startMeasuring');
                     document.dispatchEvent(event);
-
-                    // 向所有iframe发送开始测量的消息
-                    try {
-                        // 使用requestAnimationFrame延迟iframe消息发送
-                        requestAnimationFrame(() => {
-                            const iframes = document.querySelectorAll('iframe');
-                            if (iframes.length === 0) return; // 如果没有iframe，提前退出
-
-                            iframes.forEach(iframe => {
-                                if (iframe.contentWindow) {
-                                    iframe.contentWindow.postMessage({ action: 'startMeasuring' }, '*');
-                                }
-                            });
-                        });
-                    } catch(e) {
-                        console.error('Error sending message to iframes:', e);
-                    }
                 }
             });
             window.close(); // 关闭弹出窗口，降低内存占用
@@ -49,23 +32,6 @@ document.addEventListener('DOMContentLoaded', function() {
                     // 直接在页面上执行stopMeasuring功能
                     const event = new CustomEvent('stopMeasuring');
                     document.dispatchEvent(event);
-
-                    // 向所有iframe发送停止测量的消息
-                    try {
-                        // 使用requestAnimationFrame延迟iframe消息发送
-                        requestAnimationFrame(() => {
-                            const iframes = document.querySelectorAll('iframe');
-                            if (iframes.length === 0) return; // 如果没有iframe，提前退出
-
-                            iframes.forEach(iframe => {
-                                if (iframe.contentWindow) {
-                                    iframe.contentWindow.postMessage({ action: 'stopMeasuring' }, '*');
-                                }
-                            });
-                        });
-                    } catch(e) {
-                        console.error('Error sending message to iframes:', e);
-                    }
                 }
             });
         });
@@ -80,4 +46,10 @@ document.addEventListener('DOMContentLoaded', function() {
             resultDiv.style.display = 'block';
         }
     });
+});
+
+window.addEventListener('message', function(event) {
+    // 如果当前脚本运行在iframe中，直接return
+    if (window.self !== window.top) return;
+    // ...原有逻辑
 });
