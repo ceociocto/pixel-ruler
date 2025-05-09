@@ -1,0 +1,22 @@
+.chrome-ruler-marker {
+    box-sizing: border-box;
+    pointer-events: none;
+    transition: all 0.2s ease;
+}
+
+.chrome-ruler-line {
+    box-sizing: border-box;
+    pointer-events: none;
+}
+
+.chrome-ruler-permanent {
+    box-sizing: border-box;
+    pointer-events: none;
+}
+
+.chrome-ruler-label {
+    font-family: Arial, sans-serif;
+    white-space: nowrap;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    pointer-events: none;
+}

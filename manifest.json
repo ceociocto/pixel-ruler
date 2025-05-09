@@ -1,0 +1,49 @@
+{
+  "manifest_version": 3,
+  "name": "Pixel Ruler",
+  "version": "1.0",
+  "description": "Measure the distance between any two elements on a webpage with pixel-perfect precision",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    },
+    "default_title": "Pixel Ruler",
+    "default_popup": "popup.html"
+  },
+  "permissions": [
+    "activeTab",
+    "scripting"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "css": ["ruler.css"],
+      "all_frames": true
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "commands": {
+    "start-measuring": {
+      "suggested_key": {
+        "default": "Alt+Shift+L"
+      },
+      "description": "开始测量元素之间的距离"
+    },
+    "stop-measuring": {
+      "suggested_key": {
+        "default": "Alt+Shift+S"
+      },
+      "description": "停止测量元素之间的距离"
+    }
+  }
+}
