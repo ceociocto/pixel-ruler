@@ -1,0 +1,22 @@
+# macOS
+.DS_Store
+
+# Node
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# VSCode
+.vscode/
+
+# Logs
+*.log
+
+# 其他常见临时文件
+*.swp
+*.swo
+*.tmp
+
+# Chrome 扩展打包文件
+*.crx
+*.zip 
